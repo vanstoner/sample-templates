@@ -1,0 +1,128 @@
+// Exported from:        http://3aab617fa713:5516/#/templates/FolderSamplesAndTutorials-ReleaseTemplate_canary_deployment/releasefile
+// XL Release version:   8.1.0
+// Date created:         Mon Jul 02 10:55:28 GMT 2018
+
+xlr {
+  template('Deployment pattern: Canary Release') {
+    folder('Samples & Tutorials')
+    variables {
+      stringVariable('application') {
+        label 'Application name'
+        description 'The name of the application in XL Deploy.'
+        value 'PetClinic-war'
+      }
+      stringVariable('newVersion') {
+        label 'New version'
+        description 'The version of the application in XL Deploy that will be deployed.'
+      }
+      stringVariable('currentVersion') {
+        label 'Current version'
+        description 'The version of the application in XL Deploy that is currently running.'
+      }
+      stringVariable('canaryEnvironment') {
+        label 'Canary environment'
+        description 'The name of the Canary environment in XL Deploy, without the \'Environments/\' prefix.'
+        value 'Canary Deployment/Canary'
+      }
+      stringVariable('mainEnvironment') {
+        label 'Main environment'
+        description 'The name of the Main environment in XL Deploy, without the \'Environments/\' prefix.'
+        value 'Canary Deployment/Main'
+      }
+      listBoxVariable('action') {
+        required false
+        showOnReleaseStart false
+        label 'Action'
+        possibleValues 'Deploy to Main', 'Rollback Canary environment'
+        value 'Deploy to Main'
+      }
+    }
+    description 'This XL Release template shows the **Canary Deployment Pattern**\n' +
+                '\n' +
+                'The Canary Release deployment pattern is a pattern where a small subset on your production environment is used to test out new features. The environment is split into a \'canary\' part and a \'main\' part. The canary part is typically small and allows for fast deployments. A load balancer is used to direct traffic to all parts of the application, deciding which users go to the new version in the canary section and which users remain on the stable main section.\n' +
+                '\n' +
+                'For more information, please read [Perform canary deployments](https://docs.xebialabs.com/xl-release/how-to/perform-canary-deployments.html) on our documentation site.'
+    scheduledStartDate Date.parse("yyyy-MM-dd'T'HH:mm:ssZ", '2018-01-23T08:00:00+0000')
+    phases {
+      phase('Canary phase') {
+        color '#FD8D10'
+        tasks {
+          custom('Deploy to Canary environment') {
+            description 'Use XL Deploy to deploy to the Canary environment.\n' +
+                        '\n' +
+                        'Configure the XL Deploy server in **Settings > Shared Configuration**.'
+            script {
+              type 'xldeploy.Deploy'
+              retryCounter 'currentContinueRetrial':'0','currentPollingTrial':'0'
+              deploymentPackage '${application}/${newVersion}'
+              deploymentEnvironment '${canaryEnvironment}'
+            }
+          }
+          manual('Run tests') {
+            description '### Run acceptance tests\n' +
+                        '\n' +
+                        'Perform the acceptance tests before taking this version into production.\n' +
+                        '\n' +
+                        '**Application version:** `${application}/${newVersion}`   \n' +
+                        '**Environment:** `${canaryEnvironment}`'
+          }
+          userInput('Confirm full deployment') {
+            description '**Main environment:** `${mainEnvironment}`  \n' +
+                        '**Current version:** `${application}/${currentVersion}`  \n' +
+                        '**New version:** `${application}/${newVersion}`\n' +
+                        '\n' +
+                        'The new version has been tested on the Canary environment and is ready to be deployed to the Main environment.\n' +
+                        '\n' +
+                        'If tests were not successful, the Canary environment can be rolled back.\n' +
+                        '\n' +
+                        'Please confirm the switch by selecting the action below and completing this task'
+            variables {
+              variable 'action'
+            }
+          }
+        }
+      }
+      phase('Rollout phase') {
+        color '#08b153'
+        tasks {
+          sequentialGroup('Deploy to Main environment') {
+            description 'This block is executed only if tests were successful and the new version can be deployed to the Main environment.'
+            precondition 'releaseVariables[\'action\'] == \'Deploy to Main\''
+            tasks {
+              custom('Deploy to Main environment') {
+                description 'Use XL Deploy to deploy to the Main environment.'
+                script {
+                  type 'xldeploy.Deploy'
+                  retryCounter 'currentContinueRetrial':'0','currentPollingTrial':'0'
+                  deploymentPackage '${application}/${newVersion}'
+                  deploymentEnvironment '${mainEnvironment}'
+                }
+              }
+              notification('Send notification that new version is live') {
+                precondition 'False'
+                subject '${application}/${newVersion} is now live!'
+                body '**${application}/${newVersion}** has been deployed to **${mainEnvironment}** and is now live!'
+              }
+            }
+          }
+          sequentialGroup('Rollback Canary environment') {
+            description 'This block is executed only if tests failed and the Canary environment needs to be rolled back.'
+            precondition 'releaseVariables[\'action\'] == \'Rollback Canary environment\''
+            tasks {
+              custom('Rollback Canary environment') {
+                description 'Use XL Deploy to rollback the Canary environment to the original version.'
+                script {
+                  type 'xldeploy.Deploy'
+                  retryCounter 'currentContinueRetrial':'0','currentPollingTrial':'0'
+                  deploymentPackage '${application}/${currentVersion}'
+                  deploymentEnvironment '${canaryEnvironment}'
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+  }
+}
